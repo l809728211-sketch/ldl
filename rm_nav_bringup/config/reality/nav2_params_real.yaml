@@ -91,7 +91,7 @@ controller_server:
       # Robot
       # Robot
       #*******************************************************************************
-      max_vel_x: 1.2                          #最大平移速度               
+      max_vel_x: 1.5                          #最大平移速度               
       max_vel_x_backwards: 1.0                #最大后退速度                     
       max_vel_theta: 1.0                     #最大角速度
       acc_lim_x: 1.0
@@ -220,7 +220,7 @@ local_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        observation_sources: scan
+        observation_sources: scan camera_front camera_rear # scan_front scan_rear
         scan:
           topic: /scan
           raytrace_max_range: 8.0
@@ -231,10 +231,36 @@ local_costmap:
           marking: true
           inf_is_valid: true
           data_type: "LaserScan"
+        # 【新增】：添加相机避障层
+         # 【新增】前置深度相机配置
+        camera_front:
+          topic: /camera_front/depth/color/points  #  /scan_front  
+          data_type: "PointCloud2"     # LaserScan
+          raytrace_max_range: 3.5      # 清除距离略大于识别距离
+          obstacle_max_range: 3.0      # 仅信任3米内的点云，远距离噪点多
+          obstacle_min_range: 0.2
+          min_obstacle_height: 0.06    # 精准拦截 2cm 以上的石块、树根 or 删除
+          max_obstacle_height: 0.50    # 无视悬空树枝，交由雷达防撞   or 删除
+          clearing: true               # 允许清除走过的动态障碍物
+          marking: true                # 允许标记新障碍物
+          inf_is_valid: false
+
+        # 【新增】后置深度相机配置
+        camera_rear:
+          topic: /camera_rear/depth/color/points     # /scan_rear 
+          data_type: "PointCloud2"     # LaserScan
+          raytrace_max_range: 3.5
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.2
+          min_obstacle_height: 0.06
+          max_obstacle_height: 0.50
+          clearing: true
+          marking: true
+          inf_is_valid: false
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
-        inflation_radius: 0.6
+        inflation_radius: 0.4
       always_send_full_costmap: true
 
 global_costmap:
@@ -276,8 +302,8 @@ global_costmap:
           marking: true
           clearing: false
           obstacle_range: 10.0                                       # meters
-          min_obstacle_height: -0.15                                 # 同点云转换
-          max_obstacle_height: 0.25                                  # 同上
+          min_obstacle_height: 0.15                                 # 同点云转换
+          max_obstacle_height: 0.70                                  # 同上
           expected_update_rate: 0.0                                 # default 0, if not updating at this rate at least, remove from buffer
           observation_persistence: 0.0                              # default 0, use all measurements taken during now-value, 0=latest
           inf_is_valid: false                                       # default false, for laser scans
@@ -305,7 +331,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 8.0
-        inflation_radius: 0.7
+        inflation_radius: 0.6
       always_send_full_costmap: True
 
 map_saver:
@@ -356,7 +382,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [1.2, 0.0, 1.0]
+    max_velocity: [1.5, 0.0, 1.0]
     min_velocity: [-1.0, -0.0, -1.0]
     deadband_velocity: [0.0, 0.0, 0.05]
     velocity_timeout: 1.0
