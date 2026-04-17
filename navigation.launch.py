@@ -15,6 +15,7 @@ def generate_launch_description():
     # 1. 获取功能包路径
     rm_nav_pkg = get_package_share_directory('rm_nav_bringup')
     nav2_launch_dir = os.path.join(get_package_share_directory('rm_navigation'), 'launch')
+    camera_pkg_dir = get_package_share_directory('astra_camera')
 
     # 2. 声明 Launch 参数 (统一管理传参)
     world_arg = DeclareLaunchArgument(
@@ -136,60 +137,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    # === [新增] 前置相机点云转 2D 节点 ===
-    # pct_to_scan_front_node = Node(
-    #     package='pointcloud_to_laserscan',
-    #     executable='pointcloud_to_laserscan_node',
-    #     name='pct_to_scan_front',
-    #     remappings=[
-    #         ('cloud_in', '/camera_front/depth/color/points'), # 订阅前置相机3D点云
-    #         ('scan', '/scan_front')                           # 输出新的前置2D雷达话题
-    #     ],
-    #     parameters=[{
-    #         'target_frame': 'base_link',    # 统一投影到车体坐标系
-    #         'transform_tolerance': 0.05,
-    #         'min_height': 0.06,             # 【防误报】：过滤离地 6cm 以下的地面坑洼
-    #         'max_height': 0.50,             # 【防钻林】：无视 50cm 以上悬空的树枝
-    #         'angle_min': -1.0,              # 相机水平视场角（约左右各57度左右，视相机而定）
-    #         'angle_max': 1.0, 
-    #         'angle_increment': 0.0087,      # 角分辨率约 0.5 度
-    #         'scan_time': 0.033,             # 相机帧率通常30Hz (1/30s)
-    #         'range_min': 0.2,               # 最近识别距离
-    #         'range_max': 3.0,               # 最远信任距离 3米
-    #         'use_inf': True, 
-    #         'inf_epsilon': 1.0,
-    #         'use_sim_time': use_sim_time
-    #     }],
-    #     output='screen'
-    # )
-
-    # === [新增] 后置相机点云转 2D 节点 ===
-    # pct_to_scan_rear_node = Node(
-    #     package='pointcloud_to_laserscan',
-    #     executable='pointcloud_to_laserscan_node',
-    #     name='pct_to_scan_rear',
-    #     remappings=[
-    #         ('cloud_in', '/camera_rear/depth/color/points'), # 订阅后置相机3D点云
-    #         ('scan', '/scan_rear')                           # 输出新的后置2D雷达话题
-    #     ],
-    #     parameters=[{
-    #         'target_frame': 'base_link',
-    #         'transform_tolerance': 0.05,
-    #         'min_height': 0.06,             # 离地 6cm
-    #         'max_height': 0.50,             # 离地 50cm
-    #         'angle_min': -1.0,
-    #         'angle_max': 1.0, 
-    #         'angle_increment': 0.0087, 
-    #         'scan_time': 0.033, 
-    #         'range_min': 0.2, 
-    #         'range_max': 3.0, 
-    #         'use_inf': True, 
-    #         'inf_epsilon': 1.0,
-    #         'use_sim_time': use_sim_time
-    #     }],
-    #     output='screen'
-    # )
-
     # 5.7 静态 TF 发布器 (odom -> lidar_odom)
     static_tf_node = Node(
         package='tf2_ros',
@@ -242,41 +189,116 @@ def generate_launch_description():
         parameters=[{'port': '/dev/ttyUSB0', 'baudrate': 115200}]
     )
 
-    # 5.12 前置 Gemini Pro 节点
-    orbbec_pkg_dir = get_package_share_directory('astra_camera')
+    # ================= 2. 建立水平投影坐标系 (解决地面误报的核心) =================
+    # 逻辑：创建一个位置与相机一致，但没有俯仰角的坐标系。
+    # 高度计算：base_link离地0.19m + 相机安装位0.07m = 0.26m
     
-    # 5.12 【移植自1】前置深度相机 (立即启动)
-    front_camera_node = IncludeLaunchDescription(
-        AnyLaunchDescriptionSource(os.path.join(orbbec_pkg_dir, 'launch', 'gemini.launch.xml')),
+    # 前置水平坐标系
+    tf_front_level = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='tf_front_level_publisher',
+        arguments=['--x', '0.44', '--y', '0.0', '--z', '0.07', 
+                   '--yaw', '0.0', '--pitch', '0.0', '--roll', '0.0',
+                   '--frame-id', 'base_link', '--child-frame-id', 'camera_front_level']
+    )
+
+    # 后置水平坐标系 (Yaw设为 3.1415926 保证其朝向后方)
+    tf_rear_level = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='tf_rear_level_publisher',
+        arguments=['--x', '-0.44', '--y', '0.0', '--z', '0.07', 
+                   '--yaw', '3.1415926', '--pitch', '0.0', '--roll', '0.0',
+                   '--frame-id', 'base_link', '--child-frame-id', 'camera_rear_level']
+    )
+
+    # 5.12 前置 Gemini Pro 节点
+    camera_launch_file = os.path.join(camera_pkg_dir, 'launch', 'gemini.launch.xml')
+    
+     # ================= 4. 前置深度相机及转换节点 =================
+    front_camera = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(camera_launch_file),
         launch_arguments={
             'camera_name': 'camera_front',
-            'serial_number': 'AY2755200S5', # 使用你在1中成功的SN码分配
+            'serial_number': 'AY27552006X',
             'device_num': '2',
             'publish_tf': 'false',
-            'enable_color': 'false',      # 必须关闭
-            'use_uvc_camera': 'false',    # 必须关闭
-            'enable_point_cloud': 'true'
+            'enable_color': 'false',
+            'use_uvc_camera': 'false',
         }.items()
     )
 
-    # 5.13 【移植自1】后置深度相机 (延迟2秒启动)
-    rear_camera_delayed = TimerAction(
-        period=2.0,
+    pct_to_scan_front_node = Node(
+        package='pointcloud_to_laserscan',
+        executable='pointcloud_to_laserscan_node',
+        name='pct_to_scan_front',
+        remappings=[
+            ('cloud_in', '/camera_front/depth/points'),
+            ('scan', '/scan_front')
+        ],
+        parameters=[{
+            'target_frame': 'camera_front_level', # 🌟 使用水平坐标系
+            'transform_tolerance': 0.05,
+            'min_height': -0.13,            # 🌟 离地6cm (0.06 - 0.26)
+            'max_height': 0.10,             # 🌟 离地50cm (0.50 - 0.26)
+            'angle_min': -0.8,
+            'angle_max': 0.8, 
+            'angle_increment': 0.0087,
+            'scan_time': 0.033,
+            'range_min': 0.20,
+            'range_max': 1.0,
+            'use_inf': True, 
+            'inf_epsilon': 1.0,
+            'use_sim_time': False
+        }],
+        output='screen'
+    )
+
+    # ================= 5. 后置深度相机及转换节点 (同步延迟) =================
+    # 将相机和转换节点一起延迟，确保 TF 树建立后再开始处理数据
+    rear_camera_group_delayed = TimerAction(
+        period=2.0, 
         actions=[
             IncludeLaunchDescription(
-                AnyLaunchDescriptionSource(os.path.join(orbbec_pkg_dir, 'launch', 'gemini.launch.xml')),
+                AnyLaunchDescriptionSource(camera_launch_file),
                 launch_arguments={
                     'camera_name': 'camera_rear',
-                    'serial_number': 'AY27552006X', # 使用你在1中成功的SN码分配
+                    'serial_number': 'AY2755200S5',
                     'device_num': '2',
                     'publish_tf': 'false',
                     'enable_color': 'false',
                     'use_uvc_camera': 'false',
-                    'enable_point_cloud': 'true'
                 }.items()
+            ),
+            Node(
+                package='pointcloud_to_laserscan',
+                executable='pointcloud_to_laserscan_node',
+                name='pct_to_scan_rear',
+                remappings=[
+                    ('cloud_in', '/camera_rear/depth/points'),
+                    ('scan', '/scan_rear')
+                ],
+                parameters=[{
+                    'target_frame': 'camera_rear_level', # 🌟 使用水平坐标系
+                    'transform_tolerance': 0.05,
+                    'min_height': -0.13,
+                    'max_height': 0.10,
+                    'angle_min': -0.8,
+                    'angle_max': 0.8, 
+                    'angle_increment': 0.0087, 
+                    'scan_time': 0.033, 
+                    'range_min': 0.20, 
+                    'range_max': 1.0, 
+                    'use_inf': True, 
+                    'inf_epsilon': 1.0,
+                    'use_sim_time': False
+                }],
+                output='screen'
             )
         ]
     )
+
 
     # 6. 返回启动描述
     return LaunchDescription([
@@ -284,8 +306,11 @@ def generate_launch_description():
         use_sim_time_arg,
         show_rviz_arg,
         rsp_node,
-        front_camera_node,
-        rear_camera_delayed,
+        tf_front_level,
+        tf_rear_level,
+        front_camera,
+        pct_to_scan_front_node,
+        rear_camera_group_delayed,
         livox_node,
         imu_filter_node,
         ground_segmentation_node,
@@ -294,8 +319,6 @@ def generate_launch_description():
         static_tf_node,
         fast_lio_node,
         slam_toolbox_localization_node,
-        nav2_launch,
-        # pct_to_scan_front_node,   
-        # pct_to_scan_rear_node,    
+        nav2_launch,    
         serial_bridge_node
     ])
