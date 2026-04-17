@@ -240,8 +240,8 @@ def generate_launch_description():
         parameters=[{
             'target_frame': 'camera_front_level', # 🌟 使用水平坐标系
             'transform_tolerance': 0.05,
-            'min_height': -0.13,            # 🌟 离地6cm (0.06 - 0.26)
-            'max_height': 0.10,             # 🌟 离地50cm (0.50 - 0.26)
+            'min_height': -0.18,            # 🌟 离地6cm (0.06 - 0.26)
+            'max_height': 0.25,             # 🌟 离地50cm (0.50 - 0.26)
             'angle_min': -0.8,
             'angle_max': 0.8, 
             'angle_increment': 0.0087,
@@ -282,8 +282,8 @@ def generate_launch_description():
                 parameters=[{
                     'target_frame': 'camera_rear_level', # 🌟 使用水平坐标系
                     'transform_tolerance': 0.05,
-                    'min_height': -0.13,
-                    'max_height': 0.10,
+                    'min_height': -0.18,
+                    'max_height': 0.25,
                     'angle_min': -0.8,
                     'angle_max': 0.8, 
                     'angle_increment': 0.0087, 
