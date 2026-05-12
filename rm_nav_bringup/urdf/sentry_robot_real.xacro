@@ -42,7 +42,7 @@
     <color rgba="0 0 1.0 1" />
   </material>
 
-  <xacro:arg name="xyz" default="0.0 0.0 0.14" />
+  <xacro:arg name="xyz" default="0.0 0.0 0.24" />
   <xacro:arg name="rpy" default="0 0 0" />
 
   <link name="base_footprint"/>
@@ -193,39 +193,33 @@
     <child link="livox_frame"/>
   </joint>
 
-  <link name="camera_link"/>
-  <joint name="camera_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="camera_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
   <link name="camera_front_link"/>
   <joint name="camera_front_joint" type="fixed">
-    <parent link="camera_link"/>
+    <parent link="base_link"/>
     <child link="camera_front_link"/>
-    <origin xyz="0.42 0.0 0.07" rpy="0 0.1745 0"/>
+    <origin xyz="0.44 0.0 0.07" rpy="0 0 0"/>
   </joint>
 
-  <link name="camera_front_color_optical_frame"/>
+  <link name="camera_front_depth_optical_frame"/>
   <joint name="camera_front_optical_joint" type="fixed">
     <parent link="camera_front_link"/>
-    <child link="camera_front_color_optical_frame"/>
-    <origin xyz="0 0 0" rpy="-1.5707963 0 -1.5707963"/>
+    <child link="camera_front_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
   </joint>
+
 
   <link name="camera_rear_link"/>
   <joint name="camera_rear_joint" type="fixed">
-    <parent link="camera_link"/>
+    <parent link="base_link"/>
     <child link="camera_rear_link"/>
-    <origin xyz="-0.42 0.0 0.07" rpy="0 0.1745 3.14159"/>
+    <origin xyz="-0.44 0.0 0.07" rpy="0 0 3.1415926"/>
   </joint>
 
-  <link name="camera_rear_color_optical_frame"/>
+  <link name="camera_rear_depth_optical_frame"/>
   <joint name="camera_rear_optical_joint" type="fixed">
     <parent link="camera_rear_link"/>
-    <child link="camera_rear_color_optical_frame"/>
-    <origin xyz="0 0 0" rpy="-1.5707963 0 -1.5707963"/>
+    <child link="camera_rear_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
   </joint>
 
 </robot>
