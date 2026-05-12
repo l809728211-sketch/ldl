@@ -6,7 +6,7 @@
         filter_size_surf: 0.5
         filter_size_map: 0.5
         cube_side_length: 1000.0
-        runtime_pos_log_enable: false
+        runtime_pos_log_enable: true
         map_file_path: "src/rm_nav_bringup/PCD/YOUR_MAP_NAME.pcd"
 
         common:
