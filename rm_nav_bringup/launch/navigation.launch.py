@@ -9,7 +9,6 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     # 1. 获取功能包路径
@@ -102,15 +101,19 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 5.5 车体自过滤
+    # 5.5 车体自过滤 (Livox雷达专用)
     filter_node = Node(
         package='filter',
         executable='filter_node',
         name='filter_node',
+        parameters=[{
+            'input_topic': '/segmentation/obstacle',
+            'output_topic': '/processed_pointcloud'
+        }],
         output='screen'
     )
 
-    # 5.6 3D 转 2D 激光雷达 (保留了树林防挂底/防树枝的绝佳切片)
+    # 5.6 3D 转 2D 激光雷达 (Livox主雷达)
     pct_to_scan_node = Node(
         package='pointcloud_to_laserscan',
         executable='pointcloud_to_laserscan_node',
@@ -122,14 +125,14 @@ def generate_launch_description():
         parameters=[{
             'target_frame': 'base_link', 
             'transform_tolerance': 0.01,
-            'min_height': -0.06,     # 防挂底：只看4cm以上的石头和树根
-            'max_height': 0.70,      # 防钻林：无视车顶以上的垂枝和树叶
+            'min_height': -0.06,     
+            'max_height': 0.70,      
             'angle_min': -3.14159, 
             'angle_max': 3.14159, 
             'angle_increment': 0.0043, 
             'scan_time': 0.3333, 
             'range_min': 0.15, 
-            'range_max': 20.0,       # 匹配室外大范围视野
+            'range_max': 20.0,       
             'use_inf': True, 
             'inf_epsilon': 1.0,
             'use_sim_time': use_sim_time
@@ -157,13 +160,13 @@ def generate_launch_description():
     # 5.9 SLAM Toolbox (纯定位模式，加载地图)
     slam_toolbox_localization_node = Node(
         package='slam_toolbox',
-        executable='localization_slam_toolbox_node',   # 注意这里是 localization 节点
+        executable='localization_slam_toolbox_node',
         parameters=[
             slam_toolbox_params, 
             {
                 'use_sim_time': use_sim_time,
-                'map_file_name': slam_toolbox_map_path, # 将外部传入的地图传给定位算法
-                'map_start_pose': [0.0, 0.0, 0.0]       # 默认从原点启动匹配
+                'map_file_name': slam_toolbox_map_path, 
+                'map_start_pose': [0.0, 0.0, 0.0]       
             }
         ],
         output='screen'
@@ -174,9 +177,9 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(nav2_launch_dir, 'bringup_rm_navigation.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'map': nav2_map_path,            # 导航所需的代价地图底图 (.yaml)
-            'params_file': nav2_params,      # 包含了 TEB 和代价地图参数
-            'nav_rviz': show_rviz            # 是否打开 RViz
+            'map': nav2_map_path,            
+            'params_file': nav2_params,      
+            'nav_rviz': show_rviz            
         }.items()
     )
 
@@ -189,11 +192,7 @@ def generate_launch_description():
         parameters=[{'port': '/dev/ttyUSB0', 'baudrate': 115200}]
     )
 
-    # ================= 2. 建立水平投影坐标系 (解决地面误报的核心) =================
-    # 逻辑：创建一个位置与相机一致，但没有俯仰角的坐标系。
-    # 高度计算：base_link离地0.19m + 相机安装位0.07m = 0.26m
-    
-    # 前置水平坐标系
+    # ================= 2. 建立水平投影坐标系 =================
     tf_front_level = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -203,7 +202,6 @@ def generate_launch_description():
                    '--frame-id', 'base_link', '--child-frame-id', 'camera_front_level']
     )
 
-    # 后置水平坐标系 (Yaw设为 3.1415926 保证其朝向后方)
     tf_rear_level = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -213,10 +211,9 @@ def generate_launch_description():
                    '--frame-id', 'base_link', '--child-frame-id', 'camera_rear_level']
     )
 
-    # 5.12 前置 Gemini Pro 节点
+    # ================= 4. 前置深度相机、过滤节点及转换节点 =================
     camera_launch_file = os.path.join(camera_pkg_dir, 'launch', 'gemini.launch.xml')
     
-     # ================= 4. 前置深度相机及转换节点 =================
     front_camera = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(camera_launch_file),
         launch_arguments={
@@ -224,9 +221,27 @@ def generate_launch_description():
             'serial_number': 'AY27552006X',
             'device_num': '2',
             'publish_tf': 'false',
-            'enable_color': 'false',
+            'enable_color': 'true',  # 🌟【重要修改】必须设为true，否则点云没颜色
             'use_uvc_camera': 'false',
         }.items()
+    )
+
+    front_camera_filter = Node(
+        package='filter',
+        executable='filter_node',
+        name='front_camera_filter',
+        parameters=[{
+            'input_topic': '/camera_front/depth/color/points', # 🌟 订阅彩色点云
+            'output_topic': '/camera_front/depth/filtered_points',
+            'y_max_safe_height': 0.18,
+            'grass_h_min': 35.0,
+            'grass_h_max': 85.0,
+            'grass_s_min': 0.2,
+            'rock_s_max': 0.25,
+            'root_v_max': 0.35,
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
     )
 
     pct_to_scan_front_node = Node(
@@ -234,29 +249,28 @@ def generate_launch_description():
         executable='pointcloud_to_laserscan_node',
         name='pct_to_scan_front',
         remappings=[
-            ('cloud_in', '/camera_front/depth/points'),
+            ('cloud_in', '/camera_front/depth/filtered_points'), # 🌟 订阅过滤后的干净点云
             ('scan', '/scan_front')
         ],
         parameters=[{
-            'target_frame': 'camera_front_level', # 🌟 使用水平坐标系
+            'target_frame': 'base_link', 
             'transform_tolerance': 0.05,
-            'min_height': -0.18,            # 🌟 离地6cm (0.06 - 0.26)
-            'max_height': 0.25,             # 🌟 离地50cm (0.50 - 0.26)
-            'angle_min': -0.8,
-            'angle_max': 0.8, 
+            'min_height': -0.16,            
+            'max_height': -0.01,             
+            'angle_min': -1.0,
+            'angle_max': 1.0, 
             'angle_increment': 0.0087,
             'scan_time': 0.033,
             'range_min': 0.20,
-            'range_max': 1.0,
+            'range_max': 2.5,
             'use_inf': True, 
             'inf_epsilon': 1.0,
-            'use_sim_time': False
+            'use_sim_time': use_sim_time
         }],
         output='screen'
     )
 
-    # ================= 5. 后置深度相机及转换节点 (同步延迟) =================
-    # 将相机和转换节点一起延迟，确保 TF 树建立后再开始处理数据
+    # ================= 5. 后置深度相机、过滤节点及转换节点 (同步延迟) =================
     rear_camera_group_delayed = TimerAction(
         period=2.0, 
         actions=[
@@ -267,38 +281,49 @@ def generate_launch_description():
                     'serial_number': 'AY2755200S5',
                     'device_num': '2',
                     'publish_tf': 'false',
-                    'enable_color': 'false',
+                    'enable_color': 'true', # 🌟【重要修改】必须设为true
                     'use_uvc_camera': 'false',
                 }.items()
+            ),
+            Node(
+                package='filter',
+                executable='filter_node',
+                name='rear_camera_filter',
+                parameters=[{
+                    'input_topic': '/camera_rear/depth/color/points', # 🌟 订阅彩色点云
+                    'output_topic': '/camera_rear/depth/filtered_points',
+                    'y_max_safe_height': 0.18,
+                    'use_sim_time': use_sim_time
+                }],
+                output='screen'
             ),
             Node(
                 package='pointcloud_to_laserscan',
                 executable='pointcloud_to_laserscan_node',
                 name='pct_to_scan_rear',
                 remappings=[
-                    ('cloud_in', '/camera_rear/depth/points'),
+                    ('cloud_in', '/camera_rear/depth/filtered_points'), # 🌟 订阅过滤后的点云
                     ('scan', '/scan_rear')
                 ],
                 parameters=[{
-                    'target_frame': 'camera_rear_level', # 🌟 使用水平坐标系
+                    'target_frame': 'camera_rear_level',
                     'transform_tolerance': 0.05,
-                    'min_height': -0.18,
-                    'max_height': 0.25,
-                    'angle_min': -0.8,
-                    'angle_max': 0.8, 
+                    'min_height': -0.16,
+                    'max_height': -0.01,
+                    'angle_min': -1.0,
+                    'angle_max': 1.0, 
                     'angle_increment': 0.0087, 
                     'scan_time': 0.033, 
                     'range_min': 0.20, 
-                    'range_max': 1.0, 
+                    'range_max': 2.5, 
                     'use_inf': True, 
                     'inf_epsilon': 1.0,
-                    'use_sim_time': False
+                    'use_sim_time': use_sim_time
                 }],
                 output='screen'
             )
         ]
     )
-
 
     # 6. 返回启动描述
     return LaunchDescription([
@@ -309,6 +334,7 @@ def generate_launch_description():
         tf_front_level,
         tf_rear_level,
         front_camera,
+        front_camera_filter,     # 🌟 新增前向过滤节点
         pct_to_scan_front_node,
         rear_camera_group_delayed,
         livox_node,

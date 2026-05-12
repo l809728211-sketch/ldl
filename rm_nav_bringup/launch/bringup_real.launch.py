@@ -5,6 +5,8 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, TimerAction
+# 【新增引入】：这个类允许 Python launch 文件包含 XML 或 YAML 格式的 launch 文件<br/>
+from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
@@ -63,7 +65,7 @@ def generate_launch_description():
     ############################# pointcloud_downsampling parameters start ############################
     pointcloud_downsampling_config_dir = os.path.join(rm_nav_bringup_dir, 'config', 'reality', 'pointcloud_downsampling_real.yaml')
     ############################# pointcloud_downsampling parameters start ############################
-
+    
     ####################### Livox_ros_driver2 parameters start #######################
     xfer_format   = 4    # 0-PointCloud2Msg(PointXYZRTL), 1-LivoxCustomMsg, 2-PclPxyziMsg, 3-LivoxImuMsg, 4-AllMsg
     multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
@@ -403,7 +405,10 @@ def generate_launch_description():
     ld.add_action(bringup_pointcloud_to_laserscan_node)
     ld.add_action(bringup_LIO_group)
     ld.add_action(start_localization_group)
-    # ld.add_action(bringup_fake_vel_transform_node)
+    
+    ld.add_action(camera_driver)
+    ld.add_action(camera_static_tf)
+    ld.add_action(camera_to_scan)
     ld.add_action(start_serial_bridge_node)
     ld.add_action(start_mapping)
     ld.add_action(start_navigation2)
